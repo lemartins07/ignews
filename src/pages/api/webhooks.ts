@@ -1,4 +1,5 @@
 import { NextApiRequest, NextApiResponse } from 'next';
+
 import { Readable } from 'stream';
 import Stripe from 'stripe';
 import { stripe } from '../../services/stripe';
@@ -23,7 +24,10 @@ export const config = {
 }
 
 const relevantEvents = new Set([
-  'checkout.session.completed'
+  'checkout.session.completed',
+  // 'customer.subscription.created',
+  'customer.subscription.updated',
+  'customer.subscription.deleted',
 ]);
 
 // eslint-disable-next-line import/no-anonymous-default-export
@@ -43,15 +47,28 @@ export default async (req: NextApiRequest, res:NextApiResponse) => {
     const type = event.type;
 
     if (relevantEvents.has(type)){
-      try {
-        console.log('Evento recebido', event);
+      try {        
         switch (type){
+          // case 'customer.subscription.created':
+          case 'customer.subscription.updated':            
+          case 'customer.subscription.deleted':
+            const subscription = event.data.object as Stripe.Subscription;
+
+            await saveSubscription(
+              subscription.id,
+              subscription.customer.toString(),
+              false
+            )
+            
+            break;
+          
           case 'checkout.session.completed':
             const checkoutSession = event.data.object as Stripe.Checkout.Session;
 
             await saveSubscription(
               checkoutSession.subscription.toString(),
-              checkoutSession.customer.toString()
+              checkoutSession.customer.toString(),
+              true
             );
             break;
           
@@ -60,8 +77,7 @@ export default async (req: NextApiRequest, res:NextApiResponse) => {
         }        
       }catch(e) {
         return res.json({ error: 'Webhook handler failed'});
-      }
-      
+      }      
     }
 
     res.json({ received: true});
